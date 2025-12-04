@@ -1,6 +1,13 @@
 # Scan Gmail for Job Application Emails
 
-Scan my Gmail for recent job application confirmation emails and help me match them to my job log.
+Scan my Gmail for recent job application confirmation emails and automatically add them to my job log.
+
+## Mode: Automatic (No Prompts)
+
+Process all emails automatically:
+- Add new jobs without asking
+- Mark application confirmations as applied
+- Only pause if company name cannot be determined with confidence
 
 ## Workflow
 
@@ -16,24 +23,20 @@ Scan my Gmail for recent job application confirmation emails and help me match t
 
 2. **For each email found**, extract:
    - Company name (check subject, body, AND sender email domain if not obvious)
-   - Job title (if mentioned)
+   - Job title (if mentioned, use "Unknown Role" if not found)
    - Date of the email
 
-3. **Search the job database** for matches:
+3. **Search the job database** for existing matches:
    ```bash
    uv run python src/job_log/cli.py search "<company name>"
    ```
 
-4. **Present results to me** for each email:
-   - Show the email subject and sender
-   - Show the extracted company/title
-   - Indicate if this is an application confirmation (triggers apply command)
-   - Show any application tracking URLs found in the email
-   - Show any matching jobs from the database
-   - Ask if I want to:
-     - Confirm a match (and mark as applied if confirmation email)
-     - Skip this email
-     - Add as a new job if no match exists (and mark as applied if confirmation email)
+4. **Automatically process each email**:
+   - If job already exists in database: skip (don't duplicate)
+   - If new job: add it automatically
+   - If application confirmation: also mark as applied
+   - If rejection/status update for existing job: update status
+   - **Only ask** if company name cannot be confidently determined
 
 5. **Add new jobs** with the AI flag:
    ```bash
@@ -44,32 +47,34 @@ Scan my Gmail for recent job application confirmation emails and help me match t
    ```bash
    uv run python src/job_log/cli.py apply <job_id> --date "YYYY-MM-DD" --app-url "<url>" --notes "<notes>"
    ```
-   - `--date`: Use the email date as the applied date
-   - `--app-url`: Extract application tracking URLs from the email body (look for links to Workday portals, Greenhouse status pages, "view your application", "check status", etc.)
-   - `--notes`: Include useful context like "Applied via [ATS name]" or any reference/confirmation numbers found in the email
 
-7. **Update jobs** when I provide a URL:
+7. **For rejections**, update status:
    ```bash
-   uv run python src/job_log/cli.py update <job_id> --posting-url "<url>"
+   uv run python src/job_log/cli.py response <job_id> --rejected --notes "Rejection email received"
    ```
 
-## Notes
-- Be conversational and process one email at a time
-- If you can't determine the company name with confidence, show me the email content and ask
-- Common email patterns to look for:
-  - LinkedIn: "[Name], your application was sent to [Company]" - body contains title, location, applied date
-  - Workday: "Thank you for applying to [Title] at [Company]"
-  - Greenhouse: "Thanks for your interest in [Company]!"
-  - Lever: "Your application to [Company]"
-  - Generic: "We received your application for [Title]"
-  - Status updates: "[Company]: [Title] Application Update"
-  - Rejections: "decided not to move forward", "other candidates"
-  - Interview invites: "Interview for [Title]" - NOTE: company may only be in sender email domain
-  - Direct from company: "[Company Name] <*@company.com>" (not via ATS)
-- When company name isn't in subject/body, extract it from the sender's email domain (e.g., megan@acme.com → Acme)
+8. **Print a summary** at the end showing:
+   - Jobs added
+   - Jobs marked as applied
+   - Jobs updated (rejections, status changes)
+   - Jobs skipped (already in database)
+
+## Email Pattern Recognition
+
+- LinkedIn: "[Name], your application was sent to [Company]" - body contains title, location, applied date
+- Workday: "Thank you for applying to [Title] at [Company]"
+- Greenhouse: "Thanks for your interest in [Company]!"
+- Lever: "Your application to [Company]"
+- Generic: "We received your application for [Title]"
+- Status updates: "[Company]: [Title] Application Update"
+- Rejections: "decided not to move forward", "other candidates"
+- Interview invites: "Interview for [Title]" - company may only be in sender email domain
+- Direct from company: "[Company Name] <*@company.com>" (not via ATS)
+
+When company name isn't in subject/body, extract it from the sender's email domain (e.g., megan@acme.com -> Acme)
 
 ## Detecting Application Confirmations
-These email types indicate the user has APPLIED and should trigger the `apply` command after adding:
+These email types indicate APPLIED status:
 - "Thank you for applying", "Thanks for applying"
 - "Application received", "We received your application"
 - "Application confirmation"
@@ -79,15 +84,8 @@ These email types indicate the user has APPLIED and should trigger the `apply` c
 Look for these patterns in email bodies to populate `--app-url`:
 - "View your application": extract the linked URL
 - "Check your application status": extract the linked URL
-- "Your candidate portal": extract the linked URL
 - Links containing: `/application/`, `/candidate/`, `/status/`, `/profile/`
 - Workday: links to `*.myworkday.com`
-- Greenhouse: links to `*.greenhouse.io` or `boards.greenhouse.io`
+- Greenhouse: links to `*.greenhouse.io`
 - Lever: links to `jobs.lever.co`
 - iCIMS: links to `*.icims.com`
-
-## Notes Field Examples
-- "Applied via Workday"
-- "Applied via Greenhouse"
-- "Confirmation #12345"
-- "Req ID: ABC-123"
